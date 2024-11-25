@@ -20,93 +20,95 @@ import io.flutter.plugin.common.MethodChannel.Result;
 
 /** AndDynamicIconPlugin */
 public class MethodCallImplementation implements MethodCallHandler {
-  /// The MethodChannel that will the communication between Flutter and native Android
-  ///
-  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
-  /// when the Flutter Engine is detached from the Activity
-  private MethodChannel channel;
-  private Context context;
-  private Activity activity;
-  private static final String TAG = AndroidDynamicIconPlugin.getTAG();
+    private Context context;
+    private Activity activity;
+    private List<String> classNames;
+    private String packageName;
+    private boolean iconChanged = false;
+    private List<String> args = new ArrayList<>();
+    private static final String TAG = "AndroidDynamicIconPlugin";
 
-  private static List<String> classNames = null;
-  private static boolean iconChanged = false;
-  private static List<String> args =  new ArrayList<>();
-  private static String packageName = null;
-
-  MethodCallImplementation(Context context, Activity activity) {
-    this.context = context;
-    this.activity = activity;
-  }
-
-  void setActivity(Activity activity) {
-      this.activity = activity;
-  }
-
-  @Override
-  public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
-      switch (call.method) {
-        case "initialize":
-          {
-              classNames = call.arguments();
-              // initialize(call);
-              break;
-          }
-        case "changeIcon":
-          {
-              changeIcon(call);
-              break;
-          }
-        default:
-            result.notImplemented();
-            break;
-      }
-  }
-
-  private void initialize(MethodCall call) {
-    Map<String, Object> arguments = call.arguments();
-    Log.d(TAG, "Initializing AndroidDynamicIconPlugin with arguments: " + arguments);
-    if (arguments.containsKey("classNames") && arguments.containsKey("packageName")) {
-        classNames = (List<String>) arguments.get("classNames");
-        packageName = (String) arguments.get("packageName");
-        Log.d(TAG, "Initialization successful with class names: " + classNames + " and package name: " + packageName);
-    } else {
-        Log.e(TAG, "Initialization failed! Make sure to pass both 'classNames' and 'packageName'.");
+    public MethodCallImplementation(Context context, Activity activity) {
+        this.context = context;
+        this.activity = activity;
     }
-}
 
-  private void changeIcon(MethodCall call) {
-        if(classNames == null || classNames.isEmpty()) {
-        Log.e(TAG,"Initialization Failed!");
-        Log.i(TAG,"List all the activity-alias class names in initialize()");
-        return;
-      }
+    public void setActivity(Activity activity) {
+        this.activity = activity;
+    }
 
-      args = call.arguments();
-      iconChanged = true;
-  }
+    @Override
+    public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
+        switch (call.method) {
+            case "initialize":
+                initialize(call);
+                result.success("Initialized successfully");
+                break;
 
-  void updateIcon() {
-    if (iconChanged){
-        String className = args.get(0);
-        PackageManager pm = activity.getPackageManager();
-        String packageName = activity.getPackageName();
-        int componentState = PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-        int i=0;
-        for (String alias : classNames) {
-            ComponentName cn = new ComponentName(packageName, alias);
-            componentState = className.equals(alias) 
-                                 ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED 
-                                 : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-            pm.setComponentEnabledSetting(cn, componentState, PackageManager.DONT_KILL_APP);
+            case "changeIcon":
+                changeIcon(call);
+                result.success("Icon change requested");
+                break;
+
+            default:
+                result.notImplemented();
+                break;
         }
+    }
 
-        if(i>classNames.size()) {
-            Log.e(TAG,"class name "+className+" did not match in the initialized list.");
+    private void initialize(MethodCall call) {
+        Map<String, Object> arguments = call.arguments();
+        Log.d(TAG, "Initializing AndroidDynamicIconPlugin with arguments: " + arguments);
+
+        if (arguments.containsKey("classNames") && arguments.containsKey("packageName")) {
+            classNames = (List<String>) arguments.get("classNames");
+            packageName = (String) arguments.get("packageName");
+
+            Log.d(TAG, "Initialization successful with class names: " + classNames + " and package name: " + packageName);
+        } else {
+            Log.e(TAG, "Initialization failed! Make sure to pass both 'classNames' and 'packageName'.");
+        }
+    }
+
+    private void changeIcon(MethodCall call) {
+        if (classNames == null || classNames.isEmpty()) {
+            Log.e(TAG, "Initialization Failed! List all the activity-alias class names in initialize().");
             return;
         }
-        iconChanged = false;
-        Log.d(TAG,"Icon switched to "+className);
-     }
+
+        args = call.arguments();
+        iconChanged = true;
+        updateIcon();
+    }
+
+    void updateIcon() {
+        if (iconChanged) {
+            String className = args.get(0);
+            PackageManager pm = activity.getPackageManager();
+            String currentPackageName = context.getPackageName(); // Sử dụng context để lấy package name hiện tại
+
+            // Kiểm tra package name có khớp với package được cung cấp hay không
+            if (!currentPackageName.equals(packageName)) {
+                Log.e(TAG, "Package name mismatch! Skipping icon update.");
+                return;
+            }
+
+            for (String alias : classNames) {
+                ComponentName componentName = new ComponentName(currentPackageName, alias);
+                int componentState = className.equals(alias)
+                        ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+
+                try {
+                    pm.setComponentEnabledSetting(componentName, componentState, PackageManager.DONT_KILL_APP);
+                    Log.d(TAG, "Updated component: " + alias + " to state: " + componentState);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to update icon state for " + alias + ": " + e.getMessage());
+                }
+            }
+
+            iconChanged = false;
+            Log.d(TAG, "Icon switched to " + className);
+        }
     }
 }
